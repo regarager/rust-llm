@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fs::OpenOptions, io::Error};
 
 #[derive(Debug, Default)]
 struct TrieNode {
@@ -14,7 +14,10 @@ struct Trie {
 impl Trie {
     pub fn new() -> Self {
         Trie {
-            root: TrieNode::default(),
+            root: TrieNode {
+                children: HashMap::with_capacity(256),
+                value: None,
+            },
             size: 0,
         }
     }
@@ -69,6 +72,12 @@ impl Encoder {
             reverse: HashMap::new(),
         }
     }
+
+    pub fn save(path: String) -> Result<(), Error> {
+        let file = OpenOptions::new().append(true).open(path)?;
+
+        Ok(())
+    }
 }
 
 pub struct TokenizerConfig {
@@ -98,23 +107,25 @@ impl Tokenizer {
             self.enc.reverse.insert(i as i32, vec![i]);
         }
 
-        for step in 0..(self.config.vocab_size - 257) {
-            let seq = self.encode(text);
+        let mut seq: Vec<i32> = text.iter().map(|&b| b as i32).collect();
+        let mut cnt: HashMap<(i32, i32), usize> = HashMap::new();
 
-            let mut cnt: HashMap<(i32, i32), i32> = HashMap::new();
+        assert!(text.len() > 1);
 
-            for i in 0..seq.len() - 1 {
-                cnt.entry((seq[i], seq[i + 1]))
-                    .and_modify(|x| *x += 1)
-                    .or_insert(1);
-            }
+        for i in 0..seq.len() - 1 {
+            cnt.entry((seq[i], seq[i + 1]))
+                .and_modify(|x| *x += 1)
+                .or_insert(1);
+        }
 
+        for step in 0..self.config.vocab_size - 256 {
             let mut best_pair = (0, 0);
             let mut best = 0;
-            for it in cnt.iter() {
-                if *it.1 > best {
-                    best_pair = *it.0;
-                    best = *it.1;
+
+            for (&pair, &count) in cnt.iter() {
+                if count > best {
+                    best = count;
+                    best_pair = pair;
                 }
             }
 
@@ -126,12 +137,60 @@ impl Tokenizer {
             let mut new_token = self.enc.reverse[&best_pair.0].clone();
             new_token.extend_from_slice(&self.enc.reverse[&best_pair.1]);
 
+            let new_id = (step + 256) as i32;
             self.enc.vocab.insert(&new_token);
-            self.enc
-                .reverse
-                .insert((step + 256).try_into().unwrap(), new_token.clone());
+            self.enc.reverse.insert(new_id, new_token);
 
-            dbg!(step);
+            let mut new_seq: Vec<i32> = Vec::with_capacity(seq.len());
+            let mut i = 0;
+
+            while i < seq.len() {
+                if i + 1 < seq.len() && seq[i] == best_pair.0 && seq[i + 1] == best_pair.1 {
+                    if i > 0 {
+                        let left = seq[i - 1];
+
+                        if let Some(count) = cnt.get_mut(&(left, best_pair.0)) {
+                            *count -= 1;
+
+                            if *count == 0 {
+                                cnt.remove(&(left, best_pair.0));
+                            }
+                        }
+
+                        *cnt.entry((left, new_id)).or_insert(0) += 1;
+                    }
+
+                    if i + 2 < seq.len() {
+                        let right = seq[i + 2];
+
+                        if let Some(count) = cnt.get_mut(&(best_pair.1, right)) {
+                            *count -= 1;
+
+                            if *count == 0 {
+                                cnt.remove(&(best_pair.1, right));
+                            }
+                        }
+
+                        *cnt.entry((new_id, right)).or_insert(0) += 1;
+                    }
+
+                    if let Some(count) = cnt.get_mut(&best_pair) {
+                        *count -= 1;
+
+                        if *count == 0 {
+                            cnt.remove(&best_pair);
+                        }
+                    }
+
+                    new_seq.push(new_id);
+                    i += 2;
+                } else {
+                    new_seq.push(seq[i]);
+                    i += 1;
+                }
+            }
+
+            seq = new_seq;
         }
     }
 
@@ -160,17 +219,15 @@ impl Tokenizer {
             if let Some((value, end_pos)) = last_match {
                 res.push(value);
                 pos = end_pos;
-            } else {
-                if let Some(byte_node) = root.children.get(&text[pos]) {
-                    if let Some(value) = byte_node.value {
-                        res.push(value);
-                        pos += 1;
-                    } else {
-                        break;
-                    }
+            } else if let Some(byte_node) = root.children.get(&text[pos]) {
+                if let Some(value) = byte_node.value {
+                    res.push(value);
+                    pos += 1;
                 } else {
                     break;
                 }
+            } else {
+                break;
             }
         }
 
@@ -195,7 +252,7 @@ mod tests {
 
     #[test]
     fn enc_dec() {
-        let mut tokenizer = Tokenizer::new(TokenizerConfig { vocab_size: 1257 });
+        let mut tokenizer = Tokenizer::new(TokenizerConfig { vocab_size: 50257 });
         let text = fs::read_to_string("data/short.txt").unwrap();
         let bytes = text.as_bytes().to_vec();
         tokenizer.load_enc(&bytes);
