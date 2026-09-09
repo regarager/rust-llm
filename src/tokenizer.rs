@@ -11,6 +11,9 @@ struct Trie {
     size: usize,
 }
 
+
+// TODO: implement serialization
+// TODO: implement Index, IndexMut for Trie
 impl Trie {
     pub fn new() -> Self {
         Trie {
@@ -22,12 +25,10 @@ impl Trie {
         }
     }
 
-    #[allow(dead_code)]
     pub fn len(self) -> usize {
         self.size
     }
 
-    #[allow(dead_code)]
     pub fn entry(&self, seq: &[u8]) -> Option<&TrieNode> {
         let mut curr = &self.root;
 
@@ -38,7 +39,6 @@ impl Trie {
         Some(curr)
     }
 
-    #[allow(dead_code)]
     pub fn get(&self, seq: &[u8]) -> Option<i32> {
         self.entry(seq)?.value
     }
@@ -65,6 +65,7 @@ pub struct Encoder {
     reverse: HashMap<i32, Vec<u8>>,
 }
 
+// TODO: implement serialization
 impl Encoder {
     pub fn new() -> Self {
         Encoder {
@@ -88,7 +89,6 @@ pub struct Tokenizer {
     config: TokenizerConfig,
     enc: Encoder,
 
-    #[allow(dead_code)]
     eos_token: String,
 }
 

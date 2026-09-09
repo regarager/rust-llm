@@ -3,13 +3,13 @@ use std::fs;
 use crate::tokenizer::{Tokenizer, TokenizerConfig};
 
 mod embedding;
+mod rope;
 mod tensor;
 mod tokenizer;
-mod zeroable;
 
 fn main() {
     let mut tokenizer = Tokenizer::new(TokenizerConfig { vocab_size: 1257 });
-    let text = fs::read_to_string("data/akjv.txt").unwrap();
+    let text = fs::read_to_string("data/short.txt").unwrap();
     let bytes = text.as_bytes().to_vec();
     tokenizer.load_enc(&bytes);
     println!();
